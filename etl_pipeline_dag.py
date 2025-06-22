@@ -1,21 +1,36 @@
 from airflow import DAG
-from airflow.operators.python import PythonOperator
+from airflow.operators.python import PythonOperator, BranchPythonOperator
+from airflow.operators.empty import EmptyOperator
 from datetime import datetime, timedelta
+import sys
+import os
 
-from extract_and_validate import extract_and_validate
+
+
+# === Import your task logic ===
+from validate import validate
 from transform import transform
-from load_to_redshift import load_all
-from compute_kpis import compute_kpis
+# from tasks.load_to_redshift import load_all
+
+# Branch decision function
+def validate_and_branch(**kwargs):
+    try:
+        validate()  # Runs validation logic; raises exception if invalid
+        return "transform_data"
+        
+    except Exception as e:
+        # Optionally log the error here
+        print(f"Validation failed: {e}")
+        return "end_pipeline"
 
 
-# === DAG Default Config ===
+# === DAG Definition ===
 default_args = {
     "owner": "airflow",
     "retries": 1,
     "retry_delay": timedelta(minutes=5),
 }
 
-# === DAG Definition ===
 with DAG(
     dag_id="music_etl_pipeline",
     default_args=default_args,
@@ -26,9 +41,10 @@ with DAG(
     tags=["music", "ETL", "s3"],
 ) as dag:
 
-    extract_validate_task = PythonOperator(
-        task_id="extract_and_validate",
-        python_callable=extract_and_validate,
+    validate_task = BranchPythonOperator(
+        task_id="validation",
+        python_callable=validate_and_branch,
+        provide_context=True,
     )
 
     transform_task = PythonOperator(
@@ -36,17 +52,14 @@ with DAG(
         python_callable=transform,
     )
 
-    load_to_redshift_task = PythonOperator(
-    task_id="load_to_redshift",
-    python_callable=load_all,
+    end_task = EmptyOperator(
+        task_id="end_pipeline"
     )
 
-    compute_kpis_task = PythonOperator(
-    task_id="compute_kpis",
-    python_callable=compute_kpis,
+    continue_task = EmptyOperator(
+        task_id="continue_pipeline"
     )
 
-
-
-    # DAG Flow
-    extract_validate_task >> transform_task >> load_to_redshift_task >> compute_kpis_task
+    # DAG dependencies
+    validate_task >> [transform_task, end_task]
+    transform_task >> continue_task
