@@ -15,8 +15,6 @@ logger = logging.getLogger(__name__)
 
 s3 = boto3.client("s3")
 
-
-
 def read_csv_from_s3(bucket: str, key: str) -> pd.DataFrame:
     """Read a CSV file from S3 and return as a pandas DataFrame."""
     try:
@@ -72,8 +70,13 @@ def update_manifest(bucket: str, key: str, processed_files: list):
 def write_parquet_to_s3(df: pd.DataFrame, bucket: str, key: str, save_local: bool = True):
     """Write a DataFrame to S3 as a Parquet file."""
     try:
+        for col in df.columns:
+            if pd.api.types.is_datetime64_any_dtype(df[col]):
+                df[col] = df[col].astype('datetime64[us]')
+        
+        # Write to parquet with explicit timestamp precision
         buffer = BytesIO()
-        df.to_parquet(buffer, index=False, engine="pyarrow")
+        df.to_parquet(buffer, index=False, engine='pyarrow')  # Ensure proper timestamp handling
         buffer.seek(0)
         s3.put_object(Bucket=bucket, Key=key, Body=buffer.getvalue())
         logger.info(f"✅ Parquet written to s3://{bucket}/{key}")

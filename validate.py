@@ -112,6 +112,9 @@ def validate_streams(df, stream_key):
     
     # Parse timestamps
     df["listen_time"] = pd.to_datetime(df["listen_time"], errors="coerce")
+    
+    # Convert to microsecond precision to avoid TIMESTAMP(NANOS) issue
+    df["listen_time"] = df["listen_time"].astype('datetime64[us]')
     dropped = df["listen_time"].isna().sum()
     if dropped > 0:
         logger.warning(f"🕒 Dropping {dropped} rows with invalid timestamps.")
