@@ -9,7 +9,6 @@ import logging
 
 # === Import your task logic ===
 from validate import validate
-from transform import transform
 
 # Branch decision function
 def validate_and_branch(**kwargs):
@@ -207,7 +206,7 @@ with DAG(
     transform_task >> load_to_dynamodb_task >> archive_task >> continue_task
 
 
-    
+
 # from airflow import DAG
 # from airflow.operators.python import PythonOperator, BranchPythonOperator
 # from airflow.operators.empty import EmptyOperator
