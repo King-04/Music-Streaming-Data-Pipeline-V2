@@ -33,11 +33,31 @@ def archive_processed_files(**kwargs):
         logger.info("🗂️ Starting file archival process...")
         
         # Get processed files from validation task
-        processed_files = kwargs['task_instance'].xcom_pull(key='processed_files', task_ids='validation')
+        validation_result = kwargs['task_instance'].xcom_pull(key='return_value', task_ids='validation')
         
+        # Handle different return formats
+        if isinstance(validation_result, dict):
+            processed_files = validation_result.get('processed_files', [])
+        elif isinstance(validation_result, list):
+            processed_files = validation_result
+        else:
+            logger.warning(f"⚠️ Unexpected validation result type: {type(validation_result)}")
+            processed_files = []
+        
+        # Type check and handle edge cases
         if not processed_files:
             logger.info("📭 No files to archive")
-            return
+            return {"archived_files": 0}
+        
+        if isinstance(processed_files, int):
+            logger.error(f"❌ Expected list of files, got integer: {processed_files}")
+            raise ValueError(f"processed_files should be a list, not an integer: {processed_files}")
+        
+        if not isinstance(processed_files, list):
+            logger.error(f"❌ Expected list of files, got: {type(processed_files)}")
+            raise ValueError(f"processed_files should be a list, got: {type(processed_files)}")
+        
+        logger.info(f"📋 Found {len(processed_files)} files to archive: {processed_files}")
         
         s3_client = boto3.client('s3')
         bucket = 'streaming-analytics-buck1'
@@ -45,6 +65,11 @@ def archive_processed_files(**kwargs):
         
         for file_key in processed_files:
             try:
+                # Ensure file_key is a string
+                if not isinstance(file_key, str):
+                    logger.warning(f"⚠️ Skipping non-string file key: {file_key}")
+                    continue
+                
                 # Define archive path
                 archive_key = file_key.replace('streams/', 'archive/streams/')
                 
@@ -72,6 +97,7 @@ def archive_processed_files(**kwargs):
     except Exception as e:
         logger.exception("❌ File archival process failed")
         raise
+
 
 # === DAG Definition ===
 default_args = {
