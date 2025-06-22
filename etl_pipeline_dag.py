@@ -61,7 +61,11 @@ def archive_processed_files(**kwargs):
         logger.info("🗂️ Starting file archival process...")
         
         # Get processed files from validation task
-        validation_result = kwargs['task_instance'].xcom_pull(key='return_value', task_ids='validation')
+        validation_result = kwargs['task_instance'].xcom_pull(key='return_value', task_ids='validate_data')
+
+        # Debug logging to see what we're getting
+        logger.info(f"🔍 DEBUG - Validation result: {validation_result}")
+        logger.info(f"🔍 DEBUG - Type: {type(validation_result)}")
         
         # Handle different return formats
         if isinstance(validation_result, dict):
