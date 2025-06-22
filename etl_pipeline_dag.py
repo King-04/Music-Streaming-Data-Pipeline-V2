@@ -37,6 +37,24 @@ def validate_and_branch(**kwargs):
         return "end_pipeline"
 
 
+def decide_next_step(**kwargs):
+    """Pure branching logic - only makes workflow decisions"""
+    try:
+        # Get validation result from previous task
+        validation_result = kwargs['task_instance'].xcom_pull(
+            task_ids='validate_data',
+            key='return_value'
+        )
+        
+        if validation_result and validation_result.get('processed_files'):
+            return "transform_data"
+        else:
+            return "end_pipeline"
+        
+    except Exception as e:
+        print(f"Branching decision failed: {e}")
+        return "end_pipeline"
+
 def archive_processed_files(**kwargs):
     """Archive processed stream files to archive directory"""
     try:
@@ -127,13 +145,21 @@ with DAG(
     tags=["music", "ETL", "s3", "dynamodb"],
 ) as dag:
 
-    validate_task = BranchPythonOperator(
-        task_id="validation",
-        python_callable=validate_and_branch,
+    # Task 1: Pure validation task
+    validate_task = PythonOperator(
+        task_id="validate_data",
+        python_callable=run_validation,
         provide_context=True,
     )
 
-    # Replace dummy transform with actual Glue job
+    # Task 2: Pure branching decision task
+    branch_task = BranchPythonOperator(
+        task_id="decide_workflow",
+        python_callable=decide_next_step,
+        provide_context=True,
+    )
+
+    # Task 3: Transformation (Glue job)
     transform_task = GlueJobOperator(
         task_id="transform_data",
         job_name="music-streaming-transform",
@@ -148,7 +174,7 @@ with DAG(
         aws_conn_id="aws_default",
     )
 
-    # DynamoDB ingestion job
+    # Task 4: DynamoDB ingestion (Glue job)
     load_to_dynamodb_task = GlueJobOperator(
         task_id="load_to_dynamodb",
         job_name="music-streaming-dynamodb-ingestion",
@@ -160,13 +186,14 @@ with DAG(
         aws_conn_id="aws_default",
     )
 
-    # File archival task
+    # Task 5: File archival
     archive_task = PythonOperator(
         task_id="archive_processed_files",
         python_callable=archive_processed_files,
         provide_context=True,
     )
 
+    # Task 6: End states
     end_task = EmptyOperator(
         task_id="end_pipeline"
     )
@@ -175,11 +202,12 @@ with DAG(
         task_id="continue_pipeline"
     )
 
-    # DAG dependencies
-    validate_task >> [transform_task, end_task]
+    # === Task Dependencies ===
+    validate_task >> branch_task >> [transform_task, end_task]
     transform_task >> load_to_dynamodb_task >> archive_task >> continue_task
 
 
+    
 # from airflow import DAG
 # from airflow.operators.python import PythonOperator, BranchPythonOperator
 # from airflow.operators.empty import EmptyOperator
