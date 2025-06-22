@@ -278,8 +278,8 @@ def validate():
             
         return {
             "status": "success",
-            "processed_files": len(processed_streams),
-            "files": processed_streams
+            "processed_files": processed_streams,  # ✅ Return list of file paths
+            "file_count": len(processed_streams)   # Optional: also return count
         }
             
     except Exception as e:
