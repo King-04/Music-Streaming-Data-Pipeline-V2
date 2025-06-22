@@ -147,7 +147,7 @@ with DAG(
     # Task 1: Pure validation task
     validate_task = PythonOperator(
         task_id="validate_data",
-        python_callable=run_validation,
+        python_callable=validate,
         provide_context=True,
     )
 
