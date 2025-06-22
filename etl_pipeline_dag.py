@@ -13,18 +13,29 @@ from transform import transform
 
 # Branch decision function
 def validate_and_branch(**kwargs):
+    logger = logging.getLogger(__name__)
     try:
-        result = validate()  # Runs validation logic
-        if result and result.get('processed_files'):
-            # Store processed files list for downstream tasks
-            kwargs['task_instance'].xcom_push(key='processed_files', value=result['processed_files'])
-            return "transform_data"
+        result = validate()  # This should return a dict with processed_files list
+        
+        # Check if validation was successful and files were processed
+        if result and result.get('status') == 'success':
+            processed_files = result.get('processed_files', [])
+            
+            # Store the entire result for downstream tasks
+            kwargs['task_instance'].xcom_push(key='validation_result', value=result)
+            
+            if processed_files:  # If there are files to process
+                return "transform_data"
+            else:
+                logger.info("📭 No new files to process")
+                return "end_pipeline"
         else:
             return "end_pipeline"
         
     except Exception as e:
         print(f"Validation failed: {e}")
         return "end_pipeline"
+
 
 def archive_processed_files(**kwargs):
     """Archive processed stream files to archive directory"""
