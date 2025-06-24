@@ -54,35 +54,22 @@ with DAG(
     catchup=False,
     tags=["music", "ETL", "s3", "dynamodb"],
 ) as dag:
-
-    # Task 1: S3 Sensor to detect new stream files
-    s3_sensor = S3KeySensor(
-        task_id="detect_new_stream_files",
-        bucket_name="streaming-analytics-buck1",
-        bucket_key="streams/",  # Monitor the streams directory
-        wildcard_match=True,    # Match any file in streams/
-        poke_interval=60,       # Check every 60 seconds
-        timeout=300,            # Timeout after 5 minutes
-        mode="reschedule",      # Use reschedule mode to free up workers
-        soft_fail=False,        # Fail the task if timeout occurs
-        aws_conn_id="aws_default",
-    )
     
-    # Task 2: Pure validation task
+    # Task 1: Pure validation task
     validate_task = PythonOperator(
         task_id="validate_data",
         python_callable=validate,
         provide_context=True,
     )
 
-    # Task 3: Pure branching decision task
+    # Task 2: Pure branching decision task
     branch_task = BranchPythonOperator(
         task_id="decide_workflow",
         python_callable=decide_next_step,
         provide_context=True,
     )
 
-    # Task 4: Transformation (Glue job)
+    # Task 3: Transformation (Glue job)
     transform_task = GlueJobOperator(
         task_id="transform_data",
         job_name="music-streaming-transform",
@@ -97,7 +84,7 @@ with DAG(
         aws_conn_id="aws_default",
     )
 
-    # Task 5: DynamoDB ingestion (Glue job)
+    # Task 4: DynamoDB ingestion (Glue job)
     load_to_dynamodb_task = GlueJobOperator(
         task_id="load_to_dynamodb",
         job_name="music-streaming-dynamodb-ingestion",
@@ -109,14 +96,14 @@ with DAG(
         aws_conn_id="aws_default",
     )
 
-    # Task 6: File archival
+    # Task 5: File archival
     archive_task = PythonOperator(
         task_id="archive_processed_files",
         python_callable=archive_processed_files,
         provide_context=True,
     )
 
-    # Task 7: End states
+    # Task 6: End states
     end_task = EmptyOperator(
         task_id="end_pipeline"
     )
