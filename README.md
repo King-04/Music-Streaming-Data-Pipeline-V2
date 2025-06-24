@@ -29,7 +29,7 @@ This project implements a comprehensive data engineering solution for a music st
 - **Cost Optimization**: Pay-per-use architecture with intelligent resource scaling
 
 ## 🏗️ Architecture
-![]()
+![architechture diagram](images/architecture%20diagram.png)
 
 
 ### Data Flow
