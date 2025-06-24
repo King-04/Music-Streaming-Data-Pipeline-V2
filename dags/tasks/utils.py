@@ -79,13 +79,13 @@ def write_parquet_to_s3(df: pd.DataFrame, bucket: str, key: str, save_local: boo
         df.to_parquet(buffer, index=False, engine='pyarrow')  # Ensure proper timestamp handling
         buffer.seek(0)
         s3.put_object(Bucket=bucket, Key=key, Body=buffer.getvalue())
-        logger.info(f"✅ Parquet written to s3://{bucket}/{key}")
+        logger.info(f"Parquet written to s3://{bucket}/{key}")
 
         if save_local:
             os.makedirs("output", exist_ok=True)
             local_path = f"output/{key.replace('/', '_').replace('.parquet', '')}.parquet"
             df.to_parquet(local_path, index=False)
-            logger.info(f"💾 Also saved locally to {local_path}")
+            logger.info(f"Also saved locally to {local_path}")
 
     except Exception as e:
         logger.exception(f"Failed to write Parquet to s3://{bucket}/{key}")
@@ -94,13 +94,13 @@ def write_parquet_to_s3(df: pd.DataFrame, bucket: str, key: str, save_local: boo
 def read_parquet_from_s3(bucket: str, key: str) -> pd.DataFrame:
     """Read a Parquet file from S3 and return as DataFrame."""
     try:
-        logger.info(f"📥 Reading Parquet from s3://{bucket}/{key}")
+        logger.info(f"Reading Parquet from s3://{bucket}/{key}")
         response = s3.get_object(Bucket=bucket, Key=key)
         df = pd.read_parquet(BytesIO(response['Body'].read()))
-        logger.info(f"✅ Loaded {len(df)} rows from {key}")
+        logger.info(f"Loaded {len(df)} rows from {key}")
         return df
     except Exception as e:
-        logger.exception(f"❌ Failed to read Parquet from s3://{bucket}/{key}")
+        logger.exception(f"Failed to read Parquet from s3://{bucket}/{key}")
         raise
 
 
@@ -138,14 +138,14 @@ def archive_processed_files(**kwargs):
     """Archive processed stream files to archive directory"""
     try:
         logger = logging.getLogger(__name__)
-        logger.info("🗂️ Starting file archival process...")
+        logger.info("Starting file archival process...")
         
         # Get processed files from validation task
         validation_result = kwargs['task_instance'].xcom_pull(key='return_value', task_ids='validate_data')
 
         # Debug logging to see what we're getting
-        logger.info(f"🔍 DEBUG - Validation result: {validation_result}")
-        logger.info(f"🔍 DEBUG - Type: {type(validation_result)}")
+        logger.info(f"DEBUG - Validation result: {validation_result}")
+        logger.info(f"DEBUG - Type: {type(validation_result)}")
         
         # Handle different return formats
         if isinstance(validation_result, dict):
@@ -153,23 +153,23 @@ def archive_processed_files(**kwargs):
         elif isinstance(validation_result, list):
             processed_files = validation_result
         else:
-            logger.warning(f"⚠️ Unexpected validation result type: {type(validation_result)}")
+            logger.warning(f"Unexpected validation result type: {type(validation_result)}")
             processed_files = []
         
         # Type check and handle edge cases
         if not processed_files:
-            logger.info("📭 No files to archive")
+            logger.info("No files to archive")
             return {"archived_files": 0}
         
         if isinstance(processed_files, int):
-            logger.error(f"❌ Expected list of files, got integer: {processed_files}")
+            logger.error(f"Expected list of files, got integer: {processed_files}")
             raise ValueError(f"processed_files should be a list, not an integer: {processed_files}")
         
         if not isinstance(processed_files, list):
-            logger.error(f"❌ Expected list of files, got: {type(processed_files)}")
+            logger.error(f"Expected list of files, got: {type(processed_files)}")
             raise ValueError(f"processed_files should be a list, got: {type(processed_files)}")
         
-        logger.info(f"📋 Found {len(processed_files)} files to archive: {processed_files}")
+        logger.info(f"Found {len(processed_files)} files to archive: {processed_files}")
         
         s3_client = boto3.client('s3')
         bucket = 'streaming-analytics-buck1'
@@ -179,7 +179,7 @@ def archive_processed_files(**kwargs):
             try:
                 # Ensure file_key is a string
                 if not isinstance(file_key, str):
-                    logger.warning(f"⚠️ Skipping non-string file key: {file_key}")
+                    logger.warning(f"Skipping non-string file key: {file_key}")
                     continue
                 
                 # Define archive path
@@ -196,16 +196,16 @@ def archive_processed_files(**kwargs):
                 # Delete from original location
                 s3_client.delete_object(Bucket=bucket, Key=file_key)
                 
-                logger.info(f"✅ Archived: {file_key} → {archive_key}")
+                logger.info(f"Archived: {file_key} → {archive_key}")
                 archived_count += 1
                 
             except Exception as file_error:
-                logger.error(f"❌ Failed to archive {file_key}: {str(file_error)}")
+                logger.error(f"Failed to archive {file_key}: {str(file_error)}")
                 continue
         
         logger.info(f"🎉 Successfully archived {archived_count} files")
         return {"archived_files": archived_count}
         
     except Exception as e:
-        logger.exception("❌ File archival process failed")
+        logger.exception("File archival process failed")
         raise
