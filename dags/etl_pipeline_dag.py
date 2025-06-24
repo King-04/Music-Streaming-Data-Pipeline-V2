@@ -10,7 +10,8 @@ import logging
 # === Import your task logic ===
 from validate import validate
 
-# Branch decision function
+from utils import archive_processed_files, decide_next_step
+
 def validate_and_branch(**kwargs):
     logger = logging.getLogger(__name__)
     try:
@@ -34,101 +35,6 @@ def validate_and_branch(**kwargs):
     except Exception as e:
         print(f"Validation failed: {e}")
         return "end_pipeline"
-
-
-def decide_next_step(**kwargs):
-    """Pure branching logic - only makes workflow decisions"""
-    try:
-        # Get validation result from previous task
-        validation_result = kwargs['task_instance'].xcom_pull(
-            task_ids='validate_data',
-            key='return_value'
-        )
-        
-        if validation_result and validation_result.get('processed_files'):
-            return "transform_data"
-        else:
-            return "end_pipeline"
-        
-    except Exception as e:
-        print(f"Branching decision failed: {e}")
-        return "end_pipeline"
-
-def archive_processed_files(**kwargs):
-    """Archive processed stream files to archive directory"""
-    try:
-        logger = logging.getLogger(__name__)
-        logger.info("🗂️ Starting file archival process...")
-        
-        # Get processed files from validation task
-        validation_result = kwargs['task_instance'].xcom_pull(key='return_value', task_ids='validate_data')
-
-        # Debug logging to see what we're getting
-        logger.info(f"🔍 DEBUG - Validation result: {validation_result}")
-        logger.info(f"🔍 DEBUG - Type: {type(validation_result)}")
-        
-        # Handle different return formats
-        if isinstance(validation_result, dict):
-            processed_files = validation_result.get('processed_files', [])
-        elif isinstance(validation_result, list):
-            processed_files = validation_result
-        else:
-            logger.warning(f"⚠️ Unexpected validation result type: {type(validation_result)}")
-            processed_files = []
-        
-        # Type check and handle edge cases
-        if not processed_files:
-            logger.info("📭 No files to archive")
-            return {"archived_files": 0}
-        
-        if isinstance(processed_files, int):
-            logger.error(f"❌ Expected list of files, got integer: {processed_files}")
-            raise ValueError(f"processed_files should be a list, not an integer: {processed_files}")
-        
-        if not isinstance(processed_files, list):
-            logger.error(f"❌ Expected list of files, got: {type(processed_files)}")
-            raise ValueError(f"processed_files should be a list, got: {type(processed_files)}")
-        
-        logger.info(f"📋 Found {len(processed_files)} files to archive: {processed_files}")
-        
-        s3_client = boto3.client('s3')
-        bucket = 'streaming-analytics-buck1'
-        archived_count = 0
-        
-        for file_key in processed_files:
-            try:
-                # Ensure file_key is a string
-                if not isinstance(file_key, str):
-                    logger.warning(f"⚠️ Skipping non-string file key: {file_key}")
-                    continue
-                
-                # Define archive path
-                archive_key = file_key.replace('streams/', 'archive/streams/')
-                
-                # Copy to archive directory
-                copy_source = {'Bucket': bucket, 'Key': file_key}
-                s3_client.copy_object(
-                    CopySource=copy_source,
-                    Bucket=bucket,
-                    Key=archive_key
-                )
-                
-                # Delete from original location
-                s3_client.delete_object(Bucket=bucket, Key=file_key)
-                
-                logger.info(f"✅ Archived: {file_key} → {archive_key}")
-                archived_count += 1
-                
-            except Exception as file_error:
-                logger.error(f"❌ Failed to archive {file_key}: {str(file_error)}")
-                continue
-        
-        logger.info(f"🎉 Successfully archived {archived_count} files")
-        return {"archived_files": archived_count}
-        
-    except Exception as e:
-        logger.exception("❌ File archival process failed")
-        raise
 
 
 # === DAG Definition ===
