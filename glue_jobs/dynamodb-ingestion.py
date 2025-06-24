@@ -31,7 +31,7 @@ job.init(args['JOB_NAME'], args)
 def load_transformed_data():
     """Load all transformed KPI data from S3"""
     try:
-        logger.info("📥 Loading transformed KPI data from S3...")
+        logger.info("Loading transformed KPI data from S3...")
         
         base_path = f"s3://{args['S3_BUCKET']}/{args['TRANSFORMED_DATA_PATH']}"
         
@@ -40,20 +40,20 @@ def load_transformed_data():
         top_songs_df = spark.read.parquet(f"{base_path}/top_songs/")
         top_genres_df = spark.read.parquet(f"{base_path}/top_genres/")
         
-        logger.info(f"✅ Loaded {genre_kpis_df.count()} genre KPI records")
-        logger.info(f"✅ Loaded {top_songs_df.count()} top song records")
-        logger.info(f"✅ Loaded {top_genres_df.count()} top genre records")
+        logger.info(f"Loaded {genre_kpis_df.count()} genre KPI records")
+        logger.info(f"Loaded {top_songs_df.count()} top song records")
+        logger.info(f"Loaded {top_genres_df.count()} top genre records")
         
         return genre_kpis_df, top_songs_df, top_genres_df
         
     except Exception as e:
-        logger.error(f"❌ Failed to load transformed data: {str(e)}")
+        logger.error(f"Failed to load transformed data: {str(e)}")
         raise
 
 def reshape_genre_kpis_for_dynamodb(genre_kpis_df):
     """Reshape genre KPIs into DynamoDB format"""
     try:
-        logger.info("🔄 Reshaping genre KPIs for DynamoDB...")
+        logger.info("Reshaping genre KPIs for DynamoDB...")
         
         # Create multiple rows for each metric type
         metrics_list = []
@@ -101,17 +101,17 @@ def reshape_genre_kpis_for_dynamodb(genre_kpis_df):
         # Union all metric DataFrames
         all_metrics_df = listen_count_df.union(unique_listeners_df).union(total_time_df).union(avg_time_df)
         
-        logger.info(f"✅ Reshaped {all_metrics_df.count()} genre KPI records")
+        logger.info(f"Reshaped {all_metrics_df.count()} genre KPI records")
         return all_metrics_df
         
     except Exception as e:
-        logger.error(f"❌ Failed to reshape genre KPIs: {str(e)}")
+        logger.error(f"Failed to reshape genre KPIs: {str(e)}")
         raise
 
 def reshape_top_songs_for_dynamodb(top_songs_df):
     """Reshape top songs into DynamoDB format"""
     try:
-        logger.info("🔄 Reshaping top songs for DynamoDB...")
+        logger.info("Reshaping top songs for DynamoDB...")
         
         reshaped_df = top_songs_df.select(
             F.concat(F.lit("GENRE#"), F.col("track_genre"), F.lit("#DATE#"), F.col("date")).alias("pk"),
@@ -125,17 +125,17 @@ def reshape_top_songs_for_dynamodb(top_songs_df):
             F.lit("top_song").alias("record_type")
         )
         
-        logger.info(f"✅ Reshaped {reshaped_df.count()} top song records")
+        logger.info(f"Reshaped {reshaped_df.count()} top song records")
         return reshaped_df
         
     except Exception as e:
-        logger.error(f"❌ Failed to reshape top songs: {str(e)}")
+        logger.error(f"Failed to reshape top songs: {str(e)}")
         raise
 
 def reshape_top_genres_for_dynamodb(top_genres_df):
     """Reshape top genres into DynamoDB format"""
     try:
-        logger.info("🔄 Reshaping top genres for DynamoDB...")
+        logger.info("Reshaping top genres for DynamoDB...")
         
         reshaped_df = top_genres_df.select(
             F.concat(F.lit("DATE#"), F.col("date")).alias("pk"),
@@ -147,17 +147,17 @@ def reshape_top_genres_for_dynamodb(top_genres_df):
             F.lit("top_genre").alias("record_type")
         )
         
-        logger.info(f"✅ Reshaped {reshaped_df.count()} top genre records")
+        logger.info(f"Reshaped {reshaped_df.count()} top genre records")
         return reshaped_df
         
     except Exception as e:
-        logger.error(f"❌ Failed to reshape top genres: {str(e)}")
+        logger.error(f"Failed to reshape top genres: {str(e)}")
         raise
 
 def write_to_dynamodb(df, record_type):
     """Write DataFrame to DynamoDB"""
     try:
-        logger.info(f"💾 Writing {record_type} to DynamoDB...")
+        logger.info(f"Writing {record_type} to DynamoDB...")
         
         # Convert DataFrame to DynamicFrame
         dynamic_frame = DynamicFrame.fromDF(df, glueContext, f"dynamic_frame_{record_type}")
@@ -172,16 +172,16 @@ def write_to_dynamodb(df, record_type):
             }
         )
         
-        logger.info(f"✅ Successfully wrote {record_type} to DynamoDB")
+        logger.info(f"Successfully wrote {record_type} to DynamoDB")
         
     except Exception as e:
-        logger.error(f"❌ Failed to write {record_type} to DynamoDB: {str(e)}")
+        logger.error(f"Failed to write {record_type} to DynamoDB: {str(e)}")
         raise
 
 def main():
     """Main DynamoDB ingestion logic"""
     try:
-        logger.info("🚀 Starting DynamoDB ingestion job...")
+        logger.info("Starting DynamoDB ingestion job...")
         
         # Step 1: Load transformed data from S3
         genre_kpis_df, top_songs_df, top_genres_df = load_transformed_data()
@@ -199,7 +199,7 @@ def main():
         logger.info("🎉 DynamoDB ingestion job completed successfully!")
         
     except Exception as e:
-        logger.exception("❌ DynamoDB ingestion job failed")
+        logger.exception("DynamoDB ingestion job failed")
         raise
 
 if __name__ == "__main__":

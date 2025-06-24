@@ -28,7 +28,7 @@ def validate_and_branch(**kwargs):
             if processed_files:  # If there are files to process
                 return "transform_data"
             else:
-                logger.info("📭 No new files to process")
+                logger.info("No new files to process")
                 return "end_pipeline"
         else:
             return "end_pipeline"
