@@ -1,207 +1,194 @@
 import sys
-from awsglue.transforms import *
-from awsglue.utils import getResolvedOptions
-from pyspark.context import SparkContext
-from awsglue.context import GlueContext
-from awsglue.job import Job
-from awsglue.dynamicframe import DynamicFrame
-from pyspark.sql import functions as F
-from pyspark.sql.types import *
+import boto3
+import pandas as pd
+from decimal import Decimal
 import logging
+from datetime import datetime
 
 # === Setup Logging ===
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # === Get job parameters ===
-args = getResolvedOptions(sys.argv, [
-    'JOB_NAME',
-    'S3_BUCKET',
-    'TRANSFORMED_DATA_PATH',
-    'DYNAMODB_TABLE_NAME'
-])
+args = {}
+for i, arg in enumerate(sys.argv):
+    if arg.startswith('--'):
+        key = arg[2:]
+        if i + 1 < len(sys.argv) and not sys.argv[i + 1].startswith('--'):
+            args[key] = sys.argv[i + 1]
 
-# === Initialize Spark and Glue contexts ===
-sc = SparkContext()
-glueContext = GlueContext(sc)
-spark = glueContext.spark_session
-job = Job(glueContext)
-job.init(args['JOB_NAME'], args)
+S3_BUCKET = args.get('S3_BUCKET', 'streaming-analytics-buck1')
+TRANSFORMED_DATA_PATH = args.get('TRANSFORMED_DATA_PATH', 'transformed-data')
+DYNAMODB_TABLE_NAME = args.get('DYNAMODB_TABLE_NAME', 'music-streaming-kpis')
 
 def load_transformed_data():
-    """Load all transformed KPI data from S3"""
+    """Load all transformed KPI data from S3 using pandas"""
     try:
-        logger.info("Loading transformed KPI data from S3...")
+        logger.info("📥 Loading transformed KPI data from S3...")
         
-        base_path = f"s3://{args['S3_BUCKET']}/{args['TRANSFORMED_DATA_PATH']}"
+        base_path = f"s3://{S3_BUCKET}/{TRANSFORMED_DATA_PATH}"
         
-        # Load all KPI datasets
-        genre_kpis_df = spark.read.parquet(f"{base_path}/genre_kpis/")
-        top_songs_df = spark.read.parquet(f"{base_path}/top_songs/")
-        top_genres_df = spark.read.parquet(f"{base_path}/top_genres/")
+        # Load all KPI datasets using pandas (much lighter than Spark)
+        genre_kpis_df = pd.read_parquet(f"{base_path}/genre_kpis/")
+        top_songs_df = pd.read_parquet(f"{base_path}/top_songs/")
+        top_genres_df = pd.read_parquet(f"{base_path}/top_genres/")
         
-        logger.info(f"Loaded {genre_kpis_df.count()} genre KPI records")
-        logger.info(f"Loaded {top_songs_df.count()} top song records")
-        logger.info(f"Loaded {top_genres_df.count()} top genre records")
+        logger.info(f"✅ Loaded {len(genre_kpis_df)} genre KPI records")
+        logger.info(f"✅ Loaded {len(top_songs_df)} top song records")
+        logger.info(f"✅ Loaded {len(top_genres_df)} top genre records")
         
         return genre_kpis_df, top_songs_df, top_genres_df
         
     except Exception as e:
-        logger.error(f"Failed to load transformed data: {str(e)}")
+        logger.error(f"❌ Failed to load transformed data: {str(e)}")
         raise
 
 def reshape_genre_kpis_for_dynamodb(genre_kpis_df):
-    """Reshape genre KPIs into DynamoDB format"""
+    """Reshape genre KPIs into DynamoDB format using pandas operations"""
     try:
-        logger.info("Reshaping genre KPIs for DynamoDB...")
+        logger.info("🔄 Reshaping genre KPIs for DynamoDB...")
         
-        # Create multiple rows for each metric type
-        metrics_list = []
+        records = []
         
-        # Listen Count
-        listen_count_df = genre_kpis_df.select(
-            F.concat(F.lit("GENRE#"), F.col("track_genre"), F.lit("#DATE#"), F.col("date")).alias("pk"),
-            F.lit("METRIC#listen_count").alias("sk"),
-            F.col("listen_count").cast("string").alias("value"),
-            F.lit("listen_count").alias("metric_type"),
-            F.col("date").alias("date"),
-            F.col("track_genre").alias("genre")
-        )
+        for _, row in genre_kpis_df.iterrows():
+            base_pk = f"GENRE#{row['track_genre']}#DATE#{row['date']}"
+            
+            # Create records for each metric type
+            metrics = [
+                {'metric_type': 'listen_count', 'value': row['listen_count']},
+                {'metric_type': 'unique_listeners', 'value': row['unique_listeners']},
+                {'metric_type': 'total_listening_time_ms', 'value': row['total_listening_time_ms']},
+                {'metric_type': 'avg_listening_time_ms', 'value': row['avg_listening_time_ms']}
+            ]
+            
+            for metric in metrics:
+                records.append({
+                    'pk': base_pk,
+                    'sk': f"METRIC#{metric['metric_type']}",
+                    'value': str(metric['value']),
+                    'metric_type': metric['metric_type'],
+                    'date': str(row['date']),
+                    'genre': row['track_genre']
+                })
         
-        # Unique Listeners
-        unique_listeners_df = genre_kpis_df.select(
-            F.concat(F.lit("GENRE#"), F.col("track_genre"), F.lit("#DATE#"), F.col("date")).alias("pk"),
-            F.lit("METRIC#unique_listeners").alias("sk"),
-            F.col("unique_listeners").cast("string").alias("value"),
-            F.lit("unique_listeners").alias("metric_type"),
-            F.col("date").alias("date"),
-            F.col("track_genre").alias("genre")
-        )
-        
-        # Total Listening Time
-        total_time_df = genre_kpis_df.select(
-            F.concat(F.lit("GENRE#"), F.col("track_genre"), F.lit("#DATE#"), F.col("date")).alias("pk"),
-            F.lit("METRIC#total_listening_time_ms").alias("sk"),
-            F.col("total_listening_time_ms").cast("string").alias("value"),
-            F.lit("total_listening_time_ms").alias("metric_type"),
-            F.col("date").alias("date"),
-            F.col("track_genre").alias("genre")
-        )
-        
-        # Average Listening Time
-        avg_time_df = genre_kpis_df.select(
-            F.concat(F.lit("GENRE#"), F.col("track_genre"), F.lit("#DATE#"), F.col("date")).alias("pk"),
-            F.lit("METRIC#avg_listening_time_ms").alias("sk"),
-            F.col("avg_listening_time_ms").cast("string").alias("value"),
-            F.lit("avg_listening_time_ms").alias("metric_type"),
-            F.col("date").alias("date"),
-            F.col("track_genre").alias("genre")
-        )
-        
-        # Union all metric DataFrames
-        all_metrics_df = listen_count_df.union(unique_listeners_df).union(total_time_df).union(avg_time_df)
-        
-        logger.info(f"Reshaped {all_metrics_df.count()} genre KPI records")
-        return all_metrics_df
+        logger.info(f"✅ Reshaped {len(records)} genre KPI records")
+        return records
         
     except Exception as e:
-        logger.error(f"Failed to reshape genre KPIs: {str(e)}")
+        logger.error(f"❌ Failed to reshape genre KPIs: {str(e)}")
         raise
 
 def reshape_top_songs_for_dynamodb(top_songs_df):
-    """Reshape top songs into DynamoDB format"""
+    """Reshape top songs into DynamoDB format using pandas operations"""
     try:
-        logger.info("Reshaping top songs for DynamoDB...")
+        logger.info("🔄 Reshaping top songs for DynamoDB...")
         
-        reshaped_df = top_songs_df.select(
-            F.concat(F.lit("GENRE#"), F.col("track_genre"), F.lit("#DATE#"), F.col("date")).alias("pk"),
-            F.concat(F.lit("SONG#"), F.col("rank"), F.lit("#"), F.col("track_id")).alias("sk"),
-            F.col("track_name").alias("song_name"),
-            F.col("artists").alias("artists"),
-            F.col("play_count").cast("string").alias("play_count"),
-            F.col("rank").cast("string").alias("rank"),
-            F.col("date").alias("date"),
-            F.col("track_genre").alias("genre"),
-            F.lit("top_song").alias("record_type")
-        )
+        records = []
         
-        logger.info(f"Reshaped {reshaped_df.count()} top song records")
-        return reshaped_df
+        for _, row in top_songs_df.iterrows():
+            records.append({
+                'pk': f"GENRE#{row['track_genre']}#DATE#{row['date']}",
+                'sk': f"SONG#{row['rank']}#{row['track_id']}",
+                'song_name': row['track_name'],
+                'artists': row['artists'],
+                'play_count': str(row['play_count']),
+                'rank': str(row['rank']),
+                'date': str(row['date']),
+                'genre': row['track_genre'],
+                'record_type': 'top_song'
+            })
+        
+        logger.info(f"✅ Reshaped {len(records)} top song records")
+        return records
         
     except Exception as e:
-        logger.error(f"Failed to reshape top songs: {str(e)}")
+        logger.error(f"❌ Failed to reshape top songs: {str(e)}")
         raise
 
 def reshape_top_genres_for_dynamodb(top_genres_df):
-    """Reshape top genres into DynamoDB format"""
+    """Reshape top genres into DynamoDB format using pandas operations"""
     try:
-        logger.info("Reshaping top genres for DynamoDB...")
+        logger.info("🔄 Reshaping top genres for DynamoDB...")
         
-        reshaped_df = top_genres_df.select(
-            F.concat(F.lit("DATE#"), F.col("date")).alias("pk"),
-            F.concat(F.lit("GENRE_RANK#"), F.col("rank")).alias("sk"),
-            F.col("track_genre").alias("genre"),
-            F.col("total_plays").cast("string").alias("total_plays"),
-            F.col("rank").cast("string").alias("rank"),
-            F.col("date").alias("date"),
-            F.lit("top_genre").alias("record_type")
-        )
+        records = []
         
-        logger.info(f"Reshaped {reshaped_df.count()} top genre records")
-        return reshaped_df
+        for _, row in top_genres_df.iterrows():
+            records.append({
+                'pk': f"DATE#{row['date']}",
+                'sk': f"GENRE_RANK#{row['rank']}",
+                'genre': row['track_genre'],
+                'total_plays': str(row['total_plays']),
+                'rank': str(row['rank']),
+                'date': str(row['date']),
+                'record_type': 'top_genre'
+            })
+        
+        logger.info(f"✅ Reshaped {len(records)} top genre records")
+        return records
         
     except Exception as e:
-        logger.error(f"Failed to reshape top genres: {str(e)}")
+        logger.error(f"❌ Failed to reshape top genres: {str(e)}")
         raise
 
-def write_to_dynamodb(df, record_type):
-    """Write DataFrame to DynamoDB"""
+def write_to_dynamodb_batch(records, record_type):
+    """Write records to DynamoDB using efficient batch operations"""
     try:
-        logger.info(f"Writing {record_type} to DynamoDB...")
+        logger.info(f"💾 Writing {len(records)} {record_type} records to DynamoDB...")
         
-        # Convert DataFrame to DynamicFrame
-        dynamic_frame = DynamicFrame.fromDF(df, glueContext, f"dynamic_frame_{record_type}")
+        dynamodb = boto3.resource('dynamodb')
+        table = dynamodb.Table(DYNAMODB_TABLE_NAME)
         
-        # Write to DynamoDB
-        glueContext.write_dynamic_frame_from_options(
-            frame=dynamic_frame,
-            connection_type="dynamodb",
-            connection_options={
-                "dynamodb.output.tableName": args['DYNAMODB_TABLE_NAME'],
-                "dynamodb.throughput.write.percent": "0.8"  # Use 80% of write capacity
-            }
-        )
+        # Process in batches of 25 (DynamoDB batch_writer limit)
+        batch_size = 25
+        written_count = 0
         
-        logger.info(f"Successfully wrote {record_type} to DynamoDB")
+        for i in range(0, len(records), batch_size):
+            batch = records[i:i + batch_size]
+            
+            with table.batch_writer() as batch_writer:
+                for record in batch:
+                    # Convert numeric values to Decimal for DynamoDB compatibility
+                    processed_record = {}
+                    for key, value in record.items():
+                        if isinstance(value, (int, float)):
+                            processed_record[key] = Decimal(str(value))
+                        else:
+                            processed_record[key] = value
+                    
+                    batch_writer.put_item(Item=processed_record)
+                    written_count += 1
+            
+            logger.info(f"📝 Processed batch {i//batch_size + 1}, written {written_count} records so far")
+        
+        logger.info(f"✅ Successfully wrote {written_count} {record_type} records to DynamoDB")
         
     except Exception as e:
-        logger.error(f"Failed to write {record_type} to DynamoDB: {str(e)}")
+        logger.error(f"❌ Failed to write {record_type} to DynamoDB: {str(e)}")
         raise
 
 def main():
-    """Main DynamoDB ingestion logic"""
+    """Main DynamoDB ingestion logic using Python Shell"""
     try:
-        logger.info("Starting DynamoDB ingestion job...")
+        logger.info("🚀 Starting Python Shell DynamoDB ingestion job...")
         
-        # Step 1: Load transformed data from S3
+        # Step 1: Load transformed data from S3 using pandas
         genre_kpis_df, top_songs_df, top_genres_df = load_transformed_data()
         
-        # Step 2: Reshape data for DynamoDB single-table design
-        genre_metrics_df = reshape_genre_kpis_for_dynamodb(genre_kpis_df)
-        top_songs_reshaped_df = reshape_top_songs_for_dynamodb(top_songs_df)
-        top_genres_reshaped_df = reshape_top_genres_for_dynamodb(top_genres_df)
+        # Step 2: Reshape data for DynamoDB single-table design using pandas
+        genre_metrics_records = reshape_genre_kpis_for_dynamodb(genre_kpis_df)
+        top_songs_records = reshape_top_songs_for_dynamodb(top_songs_df)
+        top_genres_records = reshape_top_genres_for_dynamodb(top_genres_df)
         
-        # Step 3: Write each dataset to DynamoDB
-        write_to_dynamodb(genre_metrics_df, "genre_metrics")
-        write_to_dynamodb(top_songs_reshaped_df, "top_songs")
-        write_to_dynamodb(top_genres_reshaped_df, "top_genres")
+        # Step 3: Write each dataset to DynamoDB using batch operations
+        write_to_dynamodb_batch(genre_metrics_records, "genre_metrics")
+        write_to_dynamodb_batch(top_songs_records, "top_songs")
+        write_to_dynamodb_batch(top_genres_records, "top_genres")
         
-        logger.info("🎉 DynamoDB ingestion job completed successfully!")
+        logger.info("🎉 Python Shell DynamoDB ingestion job completed successfully!")
         
     except Exception as e:
-        logger.exception("DynamoDB ingestion job failed")
+        logger.exception("❌ DynamoDB ingestion job failed")
         raise
 
 if __name__ == "__main__":
     main()
-    job.commit()

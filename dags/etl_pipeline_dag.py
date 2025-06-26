@@ -87,7 +87,7 @@ with DAG(
     # Task 4: DynamoDB ingestion (Glue job)
     load_to_dynamodb_task = GlueJobOperator(
         task_id="load_to_dynamodb",
-        job_name="music-streaming-dynamodb-ingestion",
+        job_name="dynamodb-ingestion",
         script_args={
             "--S3_BUCKET": "streaming-analytics-buck1",
             "--TRANSFORMED_DATA_PATH": "transformed-data/",
