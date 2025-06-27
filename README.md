@@ -29,7 +29,7 @@ This project implements a comprehensive data engineering solution for a music st
 - **Cost Optimization**: Pay-per-use architecture with intelligent resource scaling
 
 ## 🏗️ Architecture
-![architechture diagram](images/architecture%20diagram.png)
+![architechture diagram](images/architecture_diagram.svg)
 
 
 ### Data Flow
@@ -39,6 +39,8 @@ This project implements a comprehensive data engineering solution for a music st
 4. **Transformation**: PySpark jobs compute daily KPIs with metadata enrichment
 5. **Storage**: Processed metrics stored in DynamoDB for fast access
 6. **Archival**: Successfully processed files moved to archive directory
+
+![dags](images/dags.png)
 
 ## 🛠️ Tech Stack
 
