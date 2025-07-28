@@ -1,0 +1,70 @@
+## 🔍 DynamoDB Console Queries
+
+### **1. Daily Genre-Level KPIs**
+
+**Get all metrics for rock genre on specific date:**
+```
+Query Type: Query
+Partition key (pk): GENRE#rock#DATE#2025-06-24
+Sort key (sk): begins_with METRIC#
+```
+
+**Get specific metric (e.g., listen count):**
+```
+Query Type: Query
+Partition key (pk): GENRE#rock#DATE#2025-06-24
+Sort key (sk): METRIC#listen_count
+```
+
+**Get all listening time metrics:**
+```
+Query Type: Query
+Partition key (pk): GENRE#rock#DATE#2025-06-24
+Sort key (sk): begins_with METRIC#listening_time
+```
+
+### **2. Top 3 Songs per Genre per Day**
+
+**Get all top songs for rock genre:**
+```
+Query Type: Query
+Partition key (pk): GENRE#rock#DATE#2025-06-24
+Sort key (sk): begins_with SONG#
+```
+
+**Get only the #1 song:**
+```
+Query Type: Query
+Partition key (pk): GENRE#rock#DATE#2025-06-24
+Sort key (sk): SONG#1#
+```
+
+**Get top 2 songs (rank 1 and 2):**
+```
+Query Type: Query
+Partition key (pk): GENRE#rock#DATE#2025-06-24
+Sort key (sk): between SONG#1# and SONG#2#z
+```
+
+### **3. Top 5 Genres per Day**
+
+**Get all top genres for specific date:**
+```
+Query Type: Query
+Partition key (pk): DATE#2025-06-24
+Sort key (sk): begins_with GENRE_RANK#
+```
+
+**Get only the #1 genre:**
+```
+Query Type: Query
+Partition key (pk): DATE#2025-06-24
+Sort key (sk): GENRE_RANK#1
+```
+
+**Get top 3 genres:**
+```
+Query Type: Query
+Partition key (pk): DATE#2025-06-24
+Sort key (sk): between GENRE_RANK#1 and GENRE_RANK#3
+```
